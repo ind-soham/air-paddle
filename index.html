@@ -1,234 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Hand Gesture Game</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-
-  <style>
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      background-color: #222;
-      color: white;
-      font-family: Arial, sans-serif;
-      margin: 0;
-      flex-direction: column;
-    }
-    
-    #game-container {
-      position: relative;
-      width: 640px;
-      height: 480px;
-      border: 4px solid #fff;
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    /* Hide the raw video feed, we only want the canvas */
-    .input_video {
-      display: none;
-    }
-
-    /* Canvas is where the game happens */
-    .output_canvas {
-      width: 100%;
-      height: 100%;
-      transform: scaleX(-1); /* Mirror effect */
-    }
-
-    #loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 24px;
-      background: rgba(0,0,0,0.7);
-      padding: 20px;
-      border-radius: 10px;
-      pointer-events: none;
-    }
-
-    h1 { margin-bottom: 10px; font-size: 20px;}
-    p { margin-top: 0; color: #aaa; font-size: 14px;}
-  </style>
+    <meta charset="UTF-8">
+    <title>AI Camera Arcade</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 50px; }
+        h1 { font-size: 3rem; margin-bottom: 10px; color: #00d4ff; }
+        p { color: #aaa; margin-bottom: 40px; }
+        .game-card {
+            background: #333;
+            display: inline-block;
+            width: 250px;
+            padding: 20px;
+            margin: 15px;
+            border-radius: 15px;
+            transition: transform 0.2s, background 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            color: white;
+            border: 2px solid transparent;
+        }
+        .game-card:hover {
+            transform: translateY(-5px);
+            background: #444;
+            border-color: #00d4ff;
+        }
+        .icon { font-size: 50px; margin-bottom: 15px; display: block; }
+        h2 { margin: 10px 0; font-size: 1.5rem; }
+        .desc { font-size: 0.9rem; color: #ccc; }
+    </style>
 </head>
 <body>
 
-  <div style="text-align:center">
-    <h1>Hand Control Game</h1>
-    <p>Use your index finger to control the Blue Paddle!</p>
-  </div>
+    <h1>AI Camera Arcade</h1>
+    <p>Select a game to play using your camera!</p>
 
-  <div id="game-container">
-    <div id="loading">Loading Camera & AI...</div>
-    <video class="input_video"></video>
-    <canvas class="output_canvas" width="640" height="480"></canvas>
-  </div>
+    <a href="paddle.html" class="game-card">
+        <span class="icon">🏓</span>
+        <h2>Air Paddle</h2>
+        <div class="desc">Control a paddle with your index finger to catch the ball.</div>
+    </a>
 
-  <script>
-    const videoElement = document.getElementsByClassName('input_video')[0];
-    const canvasElement = document.getElementsByClassName('output_canvas')[0];
-    const canvasCtx = canvasElement.getContext('2d');
-    const loadingScreen = document.getElementById('loading');
+    <a href="drums.html" class="game-card">
+        <span class="icon">🥁</span>
+        <h2>Air Drums</h2>
+        <div class="desc">Hit virtual drums in the air to make beats.</div>
+    </a>
 
-    // --- Game Variables ---
-    let paddleX = 320; // Center
-    const PADDLE_WIDTH = 100;
-    const PADDLE_HEIGHT = 20;
-    const CANVAS_WIDTH = 640;
-    const CANVAS_HEIGHT = 480;
-    
-    let ballX = Math.random() * CANVAS_WIDTH;
-    let ballY = 0;
-    let ballRadius = 15;
-    let ballSpeed = 4;
-    
-    let score = 0;
-    let gameOver = false;
+    <a href="jump.html" class="game-card">
+        <span class="icon">🏃</span>
+        <h2>Face Jump</h2>
+        <div class="desc">Move your body Up/Down to dodge obstacles.</div>
+    </a>
 
-    function onResults(results) {
-      // Hide loading text once hand is detected or stream starts
-      loadingScreen.style.display = 'none';
-
-      // 1. Clear the canvas
-      canvasCtx.save();
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-      // 2. Draw the camera feed as background
-      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-      // 3. Hand Tracking Logic
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        // Get the first hand detected
-        const landmarks = results.multiHandLandmarks[0];
-        
-        // Index Finger Tip is landmark #8
-        // Coordinates are normalized (0.0 to 1.0), so we multiply by width
-        let indexFingerX = landmarks[8].x * CANVAS_WIDTH;
-        
-        // Update paddle position based on finger
-        // Note: Because we mirrored the canvas with CSS, logic remains standard 
-        // but visuals are flipped for the user.
-        paddleX = indexFingerX; 
-        
-        // Optional: Draw skeleton on hand
-        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
-      }
-
-      // 4. Game Loop
-      if (!gameOver) {
-        updateGame();
-        drawGame();
-      } else {
-        drawGameOver();
-      }
-
-      canvasCtx.restore();
-    }
-
-    function updateGame() {
-      ballY += ballSpeed;
-
-      // Collision Detection
-      // Check Y axis (bottom of screen)
-      if (ballY + ballRadius >= CANVAS_HEIGHT - 50 && ballY - ballRadius <= CANVAS_HEIGHT - 50 + PADDLE_HEIGHT) {
-        // Check X axis (paddle range)
-        // Since canvas is mirrored via CSS, we need to think carefully. 
-        // Visual paddleX matches logical paddleX.
-        if (ballX >= paddleX - PADDLE_WIDTH / 2 && ballX <= paddleX + PADDLE_WIDTH / 2) {
-          score++;
-          resetBall();
-          ballSpeed += 0.5; // Increase difficulty
-        }
-      }
-
-      // Ball hits bottom (Miss)
-      if (ballY > CANVAS_HEIGHT) {
-        gameOver = true;
-      }
-    }
-
-    function resetBall() {
-      ballY = 0;
-      ballX = Math.random() * (CANVAS_WIDTH - 40) + 20;
-    }
-
-    function drawGame() {
-      // Draw Paddle (Blue)
-      canvasCtx.fillStyle = "#00BFFF";
-      // x, y, width, height
-      canvasCtx.fillRect(paddleX - PADDLE_WIDTH / 2, CANVAS_HEIGHT - 50, PADDLE_WIDTH, PADDLE_HEIGHT);
-
-      // Draw Ball (Green)
-      canvasCtx.beginPath();
-      canvasCtx.arc(ballX, ballY, ballRadius, 0, 2 * Math.PI);
-      canvasCtx.fillStyle = "#00FF00";
-      canvasCtx.fill();
-
-      // Draw Score
-      canvasCtx.fillStyle = "white";
-      canvasCtx.font = "30px Arial";
-      // We draw text "backwards" contextually because CSS flips the canvas.
-      // To make text readable, we must flip the context back for text drawing.
-      canvasCtx.save(); 
-      canvasCtx.scale(-1, 1); 
-      canvasCtx.fillText("Score: " + score, -140, 50); 
-      canvasCtx.restore();
-    }
-
-    function drawGameOver() {
-      canvasCtx.save();
-      canvasCtx.scale(-1, 1); // Un-mirror for text
-      canvasCtx.fillStyle = "red";
-      canvasCtx.font = "50px Arial";
-      canvasCtx.fillText("GAME OVER", -480, 240);
-      
-      canvasCtx.fillStyle = "white";
-      canvasCtx.font = "30px Arial";
-      canvasCtx.fillText("Tap to Restart", -430, 290);
-      canvasCtx.restore();
-    }
-
-    // Restart game on click
-    canvasElement.addEventListener('click', () => {
-      if (gameOver) {
-        gameOver = false;
-        score = 0;
-        ballSpeed = 4;
-        resetBall();
-      }
-    });
-
-    // --- MediaPipe Initialization ---
-    const hands = new Hands({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
-
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(onResults);
-
-    // Camera setup
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({image: videoElement});
-      },
-      width: 640,
-      height: 480
-    });
-    camera.start();
-  </script>
 </body>
 </html>
