@@ -2,97 +2,150 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Air Paddle - AI Arcade</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <title>Air Paddle - Fixed</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
+  
   <style>
-    body { background-color: #222; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-    canvas { border: 4px solid #00d4ff; border-radius: 10px; transform: scaleX(-1); max-width: 100%; }
-    #status { position: absolute; top: 20px; font-size: 24px; background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 20px; }
+    body { background-color: #222; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; font-family: sans-serif;}
+    canvas { border: 4px solid #00d4ff; border-radius: 10px; transform: scaleX(-1); max-width: 100%; max-height: 80vh; }
+    #status { position: absolute; top: 20px; font-size: 24px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; z-index: 10; text-align: center; border: 1px solid #555;}
     .back-btn { position: absolute; top: 20px; left: 20px; color: white; text-decoration: none; font-family: sans-serif; background: #444; padding: 10px; border-radius: 5px; }
+    button { margin-top: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <a href="index.html" class="back-btn">← Back to Menu</a>
-  <div id="status">Loading AI...</div>
-  <video class="input_video" style="display:none"></video>
+  <a href="index.html" class="back-btn">← Back</a>
+  
+  <div id="status">
+    Initializing AI...<br>
+    <span style="font-size:16px; color:#aaa">Please allow camera access if asked.</span>
+  </div>
+
+  <video class="input_video" style="display:none" playsinline></video>
   <canvas class="output_canvas" width="640" height="480"></canvas>
 
   <script>
-    const video = document.getElementsByClassName('input_video')[0];
-    const canvas = document.getElementsByClassName('output_canvas')[0];
-    const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
+    const videoElement = document.getElementsByClassName('input_video')[0];
+    const canvasElement = document.getElementsByClassName('output_canvas')[0];
+    const canvasCtx = canvasElement.getContext('2d');
+    const statusDiv = document.getElementById('status');
 
     let paddleX = 320;
-    let ballX = 320, ballY = 0, ballSpeed = 5, score = 0;
-    
-    // --- Hand Tracking ---
+    let ballX = 320, ballY = 0, ballSpeed = 3, score = 0; // Slower speed for start
+    let isGameRunning = false;
+
     function onResults(results) {
-        status.style.display = 'none';
-        ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        // AI Loaded Successfully!
+        if (!isGameRunning) {
+            isGameRunning = true;
+            statusDiv.style.display = 'none';
+        }
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+        
+        // Draw Camera Feed
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
         
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             let hand = results.multiHandLandmarks[0];
-            let indexTip = hand[8]; // Index Finger Tip
-            paddleX = indexTip.x * canvas.width;
+            let indexTip = hand[8]; 
             
-            // Draw marker on finger
-            ctx.beginPath();
-            ctx.arc(indexTip.x * canvas.width, indexTip.y * canvas.height, 10, 0, 2*Math.PI);
-            ctx.fillStyle = "yellow";
-            ctx.fill();
+            // Update Paddle Position
+            paddleX = indexTip.x * canvasElement.width;
+            
+            // Draw visual marker on finger
+            canvasCtx.beginPath();
+            canvasCtx.arc(indexTip.x * canvasElement.width, indexTip.y * canvasElement.height, 10, 0, 2*Math.PI);
+            canvasCtx.fillStyle = "#ffff00";
+            canvasCtx.fill();
         }
 
-        // --- Game Logic ---
-        ballY += ballSpeed;
-        
-        // Paddle Collision
-        if (ballY > 440 && ballY < 460 && Math.abs(ballX - paddleX) < 50) {
-            ballY = 0;
-            ballX = Math.random() * canvas.width;
-            score++;
-            ballSpeed += 0.5;
-        }
-        
-        // Reset if miss
-        if (ballY > 480) {
-            ballY = 0;
-            ballX = Math.random() * canvas.width;
-            score = 0;
-            ballSpeed = 5;
-        }
+        // Game Logic
+        updateGame();
+        drawGame();
 
-        // Draw Paddle
-        ctx.fillStyle = "#00d4ff";
-        ctx.fillRect(paddleX - 50, 440, 100, 20);
-
-        // Draw Ball
-        ctx.beginPath();
-        ctx.arc(ballX, ballY, 15, 0, 2*Math.PI);
-        ctx.fillStyle = "#ff0055";
-        ctx.fill();
-
-        // Draw Score (flipped back)
-        ctx.scale(-1, 1);
-        ctx.fillStyle = "white";
-        ctx.font = "30px Arial";
-        ctx.fillText("Score: " + score, -140, 50);
-        ctx.restore();
+        canvasCtx.restore();
     }
 
-    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+    function updateGame() {
+        if (!isGameRunning) return;
+        ballY += ballSpeed;
+
+        // Collision Logic
+        if (ballY > 440 && ballY < 460) {
+            if (Math.abs(ballX - paddleX) < 60) { // 60 is half paddle width + margin
+                ballY = 0;
+                ballX = Math.random() * canvasElement.width;
+                score++;
+                ballSpeed += 0.2;
+            }
+        }
+
+        // Miss Logic
+        if (ballY > 480) {
+            ballY = 0;
+            ballX = Math.random() * canvasElement.width;
+            score = 0;
+            ballSpeed = 3;
+        }
+    }
+
+    function drawGame() {
+        // Paddle
+        canvasCtx.fillStyle = "#00d4ff";
+        canvasCtx.fillRect(paddleX - 50, 440, 100, 20);
+
+        // Ball
+        canvasCtx.beginPath();
+        canvasCtx.arc(ballX, ballY, 15, 0, 2*Math.PI);
+        canvasCtx.fillStyle = "#ff0055";
+        canvasCtx.fill();
+
+        // Score (Un-mirrored)
+        canvasCtx.scale(-1, 1);
+        canvasCtx.fillStyle = "white";
+        canvasCtx.font = "30px Arial";
+        canvasCtx.fillText("Score: " + score, -140, 50);
+    }
+
+    // --- SETUP MEDIA PIPE ---
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`;
+    }});
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
     hands.onResults(onResults);
 
-    const camera = new Camera(video, {
-        onFrame: async () => { await hands.send({image: video}); },
-        width: 640, height: 480
+    // --- START CAMERA ---
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
     });
-    camera.start();
+    
+    // Start camera and catch errors
+    camera.start()
+    .then(() => {
+        console.log("Camera started");
+    })
+    .catch(err => {
+        statusDiv.innerHTML = "Error: Camera not found or permission denied.<br>Check settings.";
+        console.error(err);
+    });
+
   </script>
 </body>
 </html>
