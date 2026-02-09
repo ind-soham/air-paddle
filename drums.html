@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Air Drums - AI Arcade</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <style>
+    body { background: #222; display: flex; flex-direction: column; align-items: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; }
+    canvas { border-radius: 10px; transform: scaleX(-1); max-width: 100%; border: 4px solid #ffaa00; }
+    #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 10; cursor: pointer; }
+    .back-btn { position: absolute; top: 20px; left: 20px; color: white; text-decoration: none; background: #444; padding: 10px; border-radius: 5px; z-index: 5;}
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-btn">← Back to Menu</a>
+  
+  <div id="overlay"><h1>Click to Start Air Drums</h1></div>
+  
+  <video class="input_video" style="display:none"></video>
+  <canvas class="output_canvas" width="640" height="480"></canvas>
+
+  <script>
+    const video = document.getElementsByClassName('input_video')[0];
+    const canvas = document.getElementsByClassName('output_canvas')[0];
+    const ctx = canvas.getContext('2d');
+    let audioCtx;
+
+    // Simple Synth Beep
+    function playSound(freq) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.5);
+        osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    // Drum Zones (X, Y, Radius, Color, Frequency, Active)
+    const drums = [
+        {x: 100, y: 300, r: 60, color: 'red', freq: 200, hit: false},   // Left Drum
+        {x: 320, y: 150, r: 60, color: 'yellow', freq: 400, hit: false}, // Top Drum
+        {x: 540, y: 300, r: 60, color: 'blue', freq: 600, hit: false}   // Right Drum
+    ];
+
+    document.getElementById('overlay').addEventListener('click', () => {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        document.getElementById('overlay').style.display = 'none';
+        camera.start();
+    });
+
+    function onResults(results) {
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+        // Check hand position
+        let handX = -1, handY = -1;
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            let hand = results.multiHandLandmarks[0];
+            handX = hand[8].x * canvas.width; // Index tip
+            handY = hand[8].y * canvas.height;
+            
+            // Draw Hand Marker
+            ctx.beginPath();
+            ctx.arc(handX, handY, 15, 0, 2*Math.PI);
+            ctx.fillStyle = "white";
+            ctx.fill();
+        }
+
+        // Draw Drums & Check Collisions
+        drums.forEach(drum => {
+            // Distance Check
+            let dx = handX - drum.x;
+            let dy = handY - drum.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+
+            if (dist < drum.r) {
+                if (!drum.hit) { // Only play sound on first enter
+                    playSound(drum.freq);
+                    drum.hit = true; 
+                }
+                ctx.fillStyle = "white"; // Flash white when hit
+            } else {
+                drum.hit = false; // Reset when hand leaves
+                ctx.fillStyle = drum.color;
+            }
+
+            ctx.beginPath();
+            ctx.arc(drum.x, drum.y, drum.r, 0, 2*Math.PI);
+            ctx.fill();
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = "white";
+            ctx.stroke();
+        });
+        
+        ctx.restore();
+    }
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.5});
+    hands.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => { await hands.send({image: video}); },
+        width: 640, height: 480
+    });
+  </script>
+</body>
+</html>
