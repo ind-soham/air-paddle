@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Face Jump - AI Arcade</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <style>
+    body { background: #222; display: flex; flex-direction: column; align-items: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
+    canvas { border-radius: 10px; transform: scaleX(-1); border: 4px solid #00ff00; max-width: 100%; }
+    #score-board { font-size: 30px; margin: 10px; color: #00ff00; }
+    .back-btn { position: absolute; top: 20px; left: 20px; color: white; text-decoration: none; background: #444; padding: 10px; border-radius: 5px; z-index: 5;}
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-btn">← Back to Menu</a>
+  <div id="score-board">Score: 0</div>
+  
+  <video class="input_video" style="display:none"></video>
+  <canvas class="output_canvas" width="640" height="480"></canvas>
+
+  <script>
+    const video = document.getElementsByClassName('input_video')[0];
+    const canvas = document.getElementsByClassName('output_canvas')[0];
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score-board');
+
+    // Game Variables
+    let playerY = 240; // Player vertical position
+    let obstacles = []; // Array of walls
+    let score = 0;
+    let frameCount = 0;
+    let gameSpeed = 5;
+    let gameOver = false;
+
+    // --- Face Tracking ---
+    function onResults(results) {
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw Camera Feed (faded)
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1.0;
+
+        // 1. Get Nose Position to control Player
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            const nose = results.multiFaceLandmarks[0][1]; // Landmark 1 is nose tip
+            // Invert control: If you move head UP (low Y value), player goes UP
+            playerY = nose.y * canvas.height;
+        }
+
+        if (!gameOver) {
+            updateGame();
+            drawGame();
+        } else {
+            ctx.fillStyle = "red";
+            ctx.font = "50px Arial";
+            ctx.scale(-1, 1);
+            ctx.fillText("GAME OVER", -400, 240);
+        }
+        ctx.restore();
+    }
+
+    function updateGame() {
+        frameCount++;
+        // Add new obstacle every 100 frames
+        if (frameCount % 100 === 0) {
+            let gapHeight = 150;
+            let gapY = Math.random() * (canvas.height - gapHeight);
+            obstacles.push({x: canvas.width, gapY: gapY, gapHeight: gapHeight, passed: false});
+        }
+
+        // Move obstacles
+        obstacles.forEach(obs => {
+            obs.x -= gameSpeed;
+        });
+
+        // Remove old obstacles
+        obstacles = obstacles.filter(obs => obs.x > -50);
+
+        // Check Collision & Score
+        let playerRadius = 15;
+        let playerX = 100; // Player stays at X=100
+
+        obstacles.forEach(obs => {
+            // Check if player is within the horizontal range of the wall
+            if (obs.x < playerX + playerRadius && obs.x + 40 > playerX - playerRadius) {
+                // Check if player is NOT in the gap (Collision!)
+                if (playerY - playerRadius < obs.gapY || playerY + playerRadius > obs.gapY + obs.gapHeight) {
+                    gameOver = true;
+                }
+            }
+            // Score update
+            if (obs.x < playerX && !obs.passed) {
+                score++;
+                obs.passed = true;
+                scoreEl.innerText = "Score: " + score;
+                if(score % 5 === 0) gameSpeed += 1; // Speed up
+            }
+        });
+    }
+
+    function drawGame() {
+        // Draw Player (Circle at Nose position)
+        ctx.beginPath();
+        ctx.arc(100, playerY, 20, 0, 2 * Math.PI);
+        ctx.fillStyle = "#00ff00"; // Green Player
+        ctx.fill();
+
+        // Draw Obstacles
+        ctx.fillStyle = "#ff0000"; // Red Walls
+        obstacles.forEach(obs => {
+            // Top Wall
+            ctx.fillRect(obs.x, 0, 40, obs.gapY);
+            // Bottom Wall
+            ctx.fillRect(obs.x, obs.gapY + obs.gapHeight, 40, canvas.height - (obs.gapY + obs.gapHeight));
+        });
+    }
+
+    const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({maxNumFaces: 1, minDetectionConfidence: 0.5});
+    faceMesh.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => { await faceMesh.send({image: video}); },
+        width: 640, height: 480
+    });
+    camera.start();
+  </script>
+</body>
+</html>
