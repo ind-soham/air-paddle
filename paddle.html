@@ -1,151 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Air Paddle - Fixed</title>
-  
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6/control_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
-  
-  <style>
-    body { background-color: #222; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; overflow: hidden; font-family: sans-serif;}
-    canvas { border: 4px solid #00d4ff; border-radius: 10px; transform: scaleX(-1); max-width: 100%; max-height: 80vh; }
-    #status { position: absolute; top: 20px; font-size: 24px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; z-index: 10; text-align: center; border: 1px solid #555;}
-    .back-btn { position: absolute; top: 20px; left: 20px; color: white; text-decoration: none; font-family: sans-serif; background: #444; padding: 10px; border-radius: 5px; }
-    button { margin-top: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Paddle: Pro Edition</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root { --neon-blue: #00f3ff; --neon-pink: #ff00ff; --bg-dark: #0a0a10; }
+        body { margin: 0; background: var(--bg-dark); overflow: hidden; font-family: 'Rajdhani', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        /* Game Container */
+        #game-wrapper { position: relative; width: 100%; max-width: 800px; aspect-ratio: 4/3; box-shadow: 0 0 50px rgba(0, 243, 255, 0.1); border-radius: 12px; overflow: hidden; background: #000; }
+        
+        /* Canvas Layers */
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        #output_canvas { transform: scaleX(-1); z-index: 1; } /* Mirrored Gameplay */
+        
+        /* UI Overlay (Glassmorphism) */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; box-sizing: border-box; }
+        
+        /* HUD */
+        .hud { display: flex; justify-content: space-between; font-family: 'Orbitron', sans-serif; font-size: 24px; color: white; text-shadow: 0 0 10px var(--neon-blue); }
+        .score-box { background: rgba(0,0,0,0.5); padding: 5px 15px; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; }
+
+        /* Screens */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(10, 10, 16, 0.85); backdrop-filter: blur(10px); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; transition: opacity 0.5s; pointer-events: auto; }
+        .hidden { opacity: 0; pointer-events: none; }
+        
+        h1 { font-family: 'Orbitron', sans-serif; font-size: 3rem; color: white; margin: 0 0 20px 0; text-transform: uppercase; background: linear-gradient(to right, var(--neon-blue), var(--neon-pink)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        p { color: #aaa; font-size: 1.2rem; margin-bottom: 30px; text-align: center; max-width: 80%; }
+        
+        button { background: transparent; color: var(--neon-blue); border: 2px solid var(--neon-blue); padding: 15px 40px; font-size: 1.2rem; font-family: 'Orbitron', sans-serif; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 2px; }
+        button:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 20px var(--neon-blue); }
+        
+        /* Loading Spinner */
+        .loader { border: 4px solid #333; border-top: 4px solid var(--neon-blue); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .status-text { margin-top: 10px; font-size: 0.9rem; color: #666; font-family: monospace; }
+    </style>
 </head>
 <body>
-  <a href="index.html" class="back-btn">← Back</a>
-  
-  <div id="status">
-    Initializing AI...<br>
-    <span style="font-size:16px; color:#aaa">Please allow camera access if asked.</span>
-  </div>
 
-  <video class="input_video" style="display:none" playsinline></video>
-  <canvas class="output_canvas" width="640" height="480"></canvas>
-
-  <script>
-    const videoElement = document.getElementsByClassName('input_video')[0];
-    const canvasElement = document.getElementsByClassName('output_canvas')[0];
-    const canvasCtx = canvasElement.getContext('2d');
-    const statusDiv = document.getElementById('status');
-
-    let paddleX = 320;
-    let ballX = 320, ballY = 0, ballSpeed = 3, score = 0; // Slower speed for start
-    let isGameRunning = false;
-
-    function onResults(results) {
-        // AI Loaded Successfully!
-        if (!isGameRunning) {
-            isGameRunning = true;
-            statusDiv.style.display = 'none';
-        }
-
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-        
-        // Draw Camera Feed
-        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-        
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            let hand = results.multiHandLandmarks[0];
-            let indexTip = hand[8]; 
-            
-            // Update Paddle Position
-            paddleX = indexTip.x * canvasElement.width;
-            
-            // Draw visual marker on finger
-            canvasCtx.beginPath();
-            canvasCtx.arc(indexTip.x * canvasElement.width, indexTip.y * canvasElement.height, 10, 0, 2*Math.PI);
-            canvasCtx.fillStyle = "#ffff00";
-            canvasCtx.fill();
-        }
-
-        // Game Logic
-        updateGame();
-        drawGame();
-
-        canvasCtx.restore();
-    }
-
-    function updateGame() {
-        if (!isGameRunning) return;
-        ballY += ballSpeed;
-
-        // Collision Logic
-        if (ballY > 440 && ballY < 460) {
-            if (Math.abs(ballX - paddleX) < 60) { // 60 is half paddle width + margin
-                ballY = 0;
-                ballX = Math.random() * canvasElement.width;
-                score++;
-                ballSpeed += 0.2;
-            }
-        }
-
-        // Miss Logic
-        if (ballY > 480) {
-            ballY = 0;
-            ballX = Math.random() * canvasElement.width;
-            score = 0;
-            ballSpeed = 3;
-        }
-    }
-
-    function drawGame() {
-        // Paddle
-        canvasCtx.fillStyle = "#00d4ff";
-        canvasCtx.fillRect(paddleX - 50, 440, 100, 20);
-
-        // Ball
-        canvasCtx.beginPath();
-        canvasCtx.arc(ballX, ballY, 15, 0, 2*Math.PI);
-        canvasCtx.fillStyle = "#ff0055";
-        canvasCtx.fill();
-
-        // Score (Un-mirrored)
-        canvasCtx.scale(-1, 1);
-        canvasCtx.fillStyle = "white";
-        canvasCtx.font = "30px Arial";
-        canvasCtx.fillText("Score: " + score, -140, 50);
-    }
-
-    // --- SETUP MEDIA PIPE ---
-    const hands = new Hands({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${file}`;
-    }});
-
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    hands.onResults(onResults);
-
-    // --- START CAMERA ---
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({image: videoElement});
-      },
-      width: 640,
-      height: 480
-    });
+<div id="game-wrapper">
+    <video id="input_video" style="display:none" playsinline></video>
+    <canvas id="output_canvas"></canvas>
     
-    // Start camera and catch errors
-    camera.start()
-    .then(() => {
-        console.log("Camera started");
-    })
-    .catch(err => {
-        statusDiv.innerHTML = "Error: Camera not found or permission denied.<br>Check settings.";
-        console.error(err);
-    });
+    <div id="ui-layer">
+        <div class="hud">
+            <div class="score-box">SCORE: <span id="score-val">0</span></div>
+            <div class="score-box" style="font-size: 14px; align-self: center;">FPS: <span id="fps-val">60</span></div>
+        </div>
+    </div>
 
-  </script>
-</body>
-</html>
+    <div id="start-screen" class="screen">
+        <h1>Neon Paddle</h1>
+        <div class="loader" id="loading-spinner"></div>
+        <p id="loading-text">Initializing Neural Network...</p>
+        <button id="start-btn" style="display:none">START SYSTEM</button>
+        <div class="status-text" id="status-log">Please allow camera access</div>
+    </div>
+
+    <div id="game-over-screen" class="screen hidden">
+        <h1 style="color: var(--neon-pink
