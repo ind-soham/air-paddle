@@ -1,132 +1,291 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Face Jump - AI Arcade</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-  <style>
-    body { background: #222; display: flex; flex-direction: column; align-items: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
-    canvas { border-radius: 10px; transform: scaleX(-1); border: 4px solid #00ff00; max-width: 100%; }
-    #score-board { font-size: 30px; margin: 10px; color: #00ff00; }
-    .back-btn { position: absolute; top: 20px; left: 20px; color: white; text-decoration: none; background: #444; padding: 10px; border-radius: 5px; z-index: 5;}
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Jump: Pro Edition</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root { --neon-green: #00ff00; --neon-red: #ff0055; --bg-dark: #050505; }
+        body { margin: 0; background: var(--bg-dark); overflow: hidden; font-family: 'Rajdhani', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        #game-wrapper { position: relative; width: 100%; max-width: 900px; aspect-ratio: 16/9; box-shadow: 0 0 50px rgba(0, 255, 0, 0.1); border-radius: 12px; overflow: hidden; background: #000; }
+        
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+        #output_canvas { transform: scaleX(-1); z-index: 1; } 
+
+        /* UI Overlays */
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; padding: 20px; box-sizing: border-box; display: flex; justify-content: space-between; }
+        .score-box { font-family: 'Orbitron', sans-serif; font-size: 2rem; color: white; text-shadow: 0 0 10px var(--neon-green); }
+
+        /* Screens */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(5, 5, 5, 0.9); backdrop-filter: blur(10px); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 20; transition: opacity 0.5s; pointer-events: auto; }
+        .hidden { opacity: 0; pointer-events: none; }
+        
+        h1 { font-family: 'Orbitron', sans-serif; font-size: 3rem; margin: 0 0 10px 0; background: linear-gradient(to right, var(--neon-green), #fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        button { background: transparent; color: var(--neon-green); border: 2px solid var(--neon-green); padding: 15px 40px; font-size: 1.2rem; font-family: 'Orbitron', sans-serif; cursor: pointer; transition: all 0.3s; letter-spacing: 2px; margin-top: 20px;}
+        button:hover { background: var(--neon-green); color: black; box-shadow: 0 0 20px var(--neon-green); }
+
+        .loader { border: 4px solid #333; border-top: 4px solid var(--neon-green); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .back-btn { position: absolute; top: 20px; left: 20px; z-index: 50; color: white; text-decoration: none; font-family: 'Orbitron', sans-serif; opacity: 0.7; pointer-events: auto;}
+        .back-btn:hover { opacity: 1; color: var(--neon-green); }
+    </style>
 </head>
 <body>
-  <a href="index.html" class="back-btn">← Back to Menu</a>
-  <div id="score-board">Score: 0</div>
-  
-  <video class="input_video" style="display:none"></video>
-  <canvas class="output_canvas" width="640" height="480"></canvas>
 
-  <script>
-    const video = document.getElementsByClassName('input_video')[0];
-    const canvas = document.getElementsByClassName('output_canvas')[0];
-    const ctx = canvas.getContext('2d');
-    const scoreEl = document.getElementById('score-board');
+<div id="game-wrapper">
+    <a href="index.html" class="back-btn">← MENU</a>
+    
+    <video id="input_video" style="display:none" playsinline></video>
+    <canvas id="output_canvas"></canvas>
+    
+    <div class="ui-layer">
+        <div class="score-box">DIST: <span id="score-val">0</span>m</div>
+    </div>
 
-    // Game Variables
-    let playerY = 240; // Player vertical position
-    let obstacles = []; // Array of walls
+    <div id="start-screen" class="screen">
+        <h1>NEON JUMP</h1>
+        <div class="loader" id="loading-spinner"></div>
+        <p id="loading-text" style="color:#aaa">Calibrating Face Sensors...</p>
+        <button id="start-btn" style="display:none">ENGAGE</button>
+        <p style="font-size: 0.8rem; color: #666; margin-top: 10px;">Controls: Move your HEAD Up/Down</p>
+    </div>
+
+    <div id="game-over-screen" class="screen hidden">
+        <h1 style="color: var(--neon-red); -webkit-text-fill-color: var(--neon-red);">CRASHED</h1>
+        <p style="color:white; font-size: 1.5rem;">Distance: <span id="final-score">0</span>m</p>
+        <button onclick="resetGame()">RETRY</button>
+    </div>
+</div>
+
+<script>
+    // --- AUDIO SYSTEM ---
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioContext();
+
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const t = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'jump') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, t);
+            osc.frequency.exponentialRampToValueAtTime(800, t + 0.1);
+            gain.gain.setValueAtTime(0.1, t);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+            osc.start(t);
+            osc.stop(t + 0.1);
+        } else if (type === 'crash') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(100, t);
+            osc.frequency.exponentialRampToValueAtTime(10, t + 0.5);
+            gain.gain.setValueAtTime(0.5, t);
+            gain.gain.linearRampToValueAtTime(0, t + 0.5);
+            osc.start(t);
+            osc.stop(t + 0.5);
+        }
+    }
+
+    // --- GAME ENGINE ---
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const ctx = canvasElement.getContext('2d');
+    const startScreen = document.getElementById('start-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const startBtn = document.getElementById('start-btn');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const scoreVal = document.getElementById('score-val');
+
+    let gameState = 'LOADING';
     let score = 0;
     let frameCount = 0;
-    let gameSpeed = 5;
-    let gameOver = false;
+    let speed = 5;
 
-    // --- Face Tracking ---
+    // Player (Head)
+    let playerY = 0.5; // Normalized 0-1
+    let playerTargetY = 0.5; // Smooth movement
+    
+    // Obstacles
+    let obstacles = [];
+
+    function resize() {
+        canvasElement.width = canvasElement.parentElement.clientWidth;
+        canvasElement.height = canvasElement.parentElement.clientHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
     function onResults(results) {
+        if(gameState === 'LOADING') {
+            gameState = 'MENU';
+            loadingSpinner.style.display = 'none';
+            document.getElementById('loading-text').innerText = "SYSTEM READY";
+            startBtn.style.display = 'inline-block';
+        }
+
+        const w = canvasElement.width;
+        const h = canvasElement.height;
+
         ctx.save();
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, w, h);
         
-        // Draw Camera Feed (faded)
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-        ctx.globalAlpha = 1.0;
+        // Draw Darkened Video Background
+        ctx.filter = 'grayscale(100%) brightness(30%) contrast(120%)';
+        ctx.drawImage(results.image, 0, 0, w, h);
+        ctx.filter = 'none';
 
-        // 1. Get Nose Position to control Player
+        // 1. Face Tracking
         if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-            const nose = results.multiFaceLandmarks[0][1]; // Landmark 1 is nose tip
-            // Invert control: If you move head UP (low Y value), player goes UP
-            playerY = nose.y * canvas.height;
+            const face = results.multiFaceLandmarks[0];
+            const nose = face[1]; // Nose Tip
+            
+            // Update Player Target Y (Inverted control feels more natural for flying)
+            // If nose goes up (low y), player goes up.
+            playerTargetY = nose.y; 
         }
 
-        if (!gameOver) {
-            updateGame();
-            drawGame();
-        } else {
-            ctx.fillStyle = "red";
-            ctx.font = "50px Arial";
-            ctx.scale(-1, 1);
-            ctx.fillText("GAME OVER", -400, 240);
+        // Smooth Movement (Lerp)
+        playerY += (playerTargetY - playerY) * 0.2;
+        
+        // Clamp player to screen
+        if(playerY < 0.05) playerY = 0.05;
+        if(playerY > 0.95) playerY = 0.95;
+
+        if (gameState === 'PLAYING') {
+            updateGame(w, h);
+            drawGame(w, h);
         }
+
         ctx.restore();
     }
 
-    function updateGame() {
+    function updateGame(w, h) {
         frameCount++;
-        // Add new obstacle every 100 frames
-        if (frameCount % 100 === 0) {
-            let gapHeight = 150;
-            let gapY = Math.random() * (canvas.height - gapHeight);
-            obstacles.push({x: canvas.width, gapY: gapY, gapHeight: gapHeight, passed: false});
+        score++;
+        scoreVal.innerText = Math.floor(score/10);
+
+        // Spawn Obstacles
+        if (frameCount % 60 === 0) {
+            let gapSize = 0.3; // 30% of screen height
+            let gapPos = Math.random() * (1.0 - gapSize); // Random Y position
+            obstacles.push({ x: 1.0, gapY: gapPos, gapH: gapSize, passed: false });
+            
+            // Speed up over time
+            if(score % 500 === 0) speed += 1;
         }
 
-        // Move obstacles
-        obstacles.forEach(obs => {
-            obs.x -= gameSpeed;
-        });
+        // Move Obstacles
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= (speed / w); // Move left based on screen width
 
-        // Remove old obstacles
-        obstacles = obstacles.filter(obs => obs.x > -50);
+            // Remove off-screen
+            if (obs.x < -0.2) obstacles.splice(i, 1);
 
-        // Check Collision & Score
-        let playerRadius = 15;
-        let playerX = 100; // Player stays at X=100
-
-        obstacles.forEach(obs => {
-            // Check if player is within the horizontal range of the wall
-            if (obs.x < playerX + playerRadius && obs.x + 40 > playerX - playerRadius) {
-                // Check if player is NOT in the gap (Collision!)
-                if (playerY - playerRadius < obs.gapY || playerY + playerRadius > obs.gapY + obs.gapHeight) {
-                    gameOver = true;
+            // Collision Detection
+            // Player X is fixed at 0.2 (20% from left)
+            // Player Radius approx 0.05
+            if (obs.x < 0.25 && obs.x > 0.15) {
+                if (playerY < obs.gapY || playerY > obs.gapY + obs.gapH) {
+                    endGame();
                 }
             }
-            // Score update
-            if (obs.x < playerX && !obs.passed) {
-                score++;
-                obs.passed = true;
-                scoreEl.innerText = "Score: " + score;
-                if(score % 5 === 0) gameSpeed += 1; // Speed up
-            }
-        });
+        }
     }
 
-    function drawGame() {
-        // Draw Player (Circle at Nose position)
+    function drawGame(w, h) {
+        // Draw Player (Glowing Orb)
+        let py = playerY * h;
+        let px = 0.2 * w; // Fixed X position
+
+        // Trail effect
         ctx.beginPath();
-        ctx.arc(100, playerY, 20, 0, 2 * Math.PI);
-        ctx.fillStyle = "#00ff00"; // Green Player
-        ctx.fill();
+        ctx.moveTo(px - 20, py);
+        ctx.lineTo(px - 60, py);
+        ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
 
-        // Draw Obstacles
-        ctx.fillStyle = "#ff0000"; // Red Walls
+        // Core
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#00ff00';
+        ctx.beginPath();
+        ctx.arc(px, py, 15, 0, Math.PI*2);
+        ctx.fillStyle = '#00ff00';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Draw Obstacles (Walls)
+        ctx.fillStyle = '#ff0055'; // Neon Red
         obstacles.forEach(obs => {
+            let ox = obs.x * w;
+            let oy = obs.gapY * h;
+            let oh = obs.gapH * h;
+            let width = 0.05 * w; // Wall thickness
+
             // Top Wall
-            ctx.fillRect(obs.x, 0, 40, obs.gapY);
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ff0055';
+            ctx.fillRect(ox, 0, width, oy);
+            
             // Bottom Wall
-            ctx.fillRect(obs.x, obs.gapY + obs.gapHeight, 40, canvas.height - (obs.gapY + obs.gapHeight));
+            ctx.fillRect(ox, oy + oh, width, h - (oy + oh));
+            ctx.shadowBlur = 0;
         });
     }
 
+    function startGame() {
+        startScreen.classList.add('hidden');
+        gameState = 'PLAYING';
+        score = 0;
+        speed = 5;
+        obstacles = [];
+        audioCtx.resume();
+    }
+
+    function endGame() {
+        gameState = 'GAMEOVER';
+        playSound('crash');
+        document.getElementById('final-score').innerText = Math.floor(score/10);
+        gameOverScreen.classList.remove('hidden');
+    }
+
+    function resetGame() {
+        gameOverScreen.classList.add('hidden');
+        startGame();
+    }
+
+    startBtn.addEventListener('click', startGame);
+
+    // Initialize Face Mesh
     const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
-    faceMesh.setOptions({maxNumFaces: 1, minDetectionConfidence: 0.5});
+    faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
     faceMesh.onResults(onResults);
 
-    const camera = new Camera(video, {
-        onFrame: async () => { await faceMesh.send({image: video}); },
-        width: 640, height: 480
+    const camera = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        width: 1280, height: 720
     });
     camera.start();
-  </script>
+
+</script>
 </body>
 </html>
