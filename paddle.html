@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neon Paddle: Hand Tracker</title>
+    <title>Neon Paddle: Classic</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -13,35 +13,40 @@
     <style>
         body { margin: 0; background: #050505; overflow: hidden; font-family: 'Orbitron', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; }
         
-        #game-wrapper { position: relative; width: 100%; max-width: 900px; aspect-ratio: 16/9; border: 2px solid #00f3ff; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 0 40px rgba(0, 243, 255, 0.2); }
+        #game-wrapper { position: relative; width: 100%; max-width: 800px; aspect-ratio: 4/3; border: 2px solid #00f3ff; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 0 40px rgba(0, 243, 255, 0.2); }
         
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        /* Mirror the canvas so moving Right moves Right */
         #output_canvas { transform: scaleX(-1); z-index: 2; } 
 
-        .hud { position: absolute; top: 20px; left: 20px; z-index: 10; color: #00f3ff; font-size: 20px; text-shadow: 0 0 10px #00f3ff; pointer-events: none; width: 90%; display: flex; justify-content: space-between;}
+        .hud { position: absolute; top: 20px; left: 20px; z-index: 10; color: #00f3ff; font-size: 24px; text-shadow: 0 0 10px #00f3ff; pointer-events: none; }
         
-        #loading { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 20; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
-        .spinner { width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #00f3ff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;}
-        @keyframes spin { 0% {transform: rotate(0deg);} 100% {transform: rotate(360deg);} }
+        /* Overlay for Click-to-Start */
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 20; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
+        
+        #start-btn {
+            background: transparent; color: #00f3ff; border: 2px solid #00f3ff;
+            padding: 15px 40px; font-size: 1.5rem; font-family: 'Orbitron', sans-serif;
+            cursor: pointer; margin-top: 20px; transition: 0.2s;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+        #start-btn:hover { background: #00f3ff; color: black; box-shadow: 0 0 30px #00f3ff; }
 
-        .status-searching { color: #ff0055; animation: blink 1s infinite; }
-        .status-locked { color: #00ff00; }
-        @keyframes blink { 50% { opacity: 0.5; } }
+        .back-btn { position: absolute; top: 20px; left: 20px; z-index: 30; color: white; text-decoration: none; font-size: 1rem; opacity: 0.7; }
+        .back-btn:hover { opacity: 1; color: #00f3ff; }
+
     </style>
 </head>
 <body>
 
 <div id="game-wrapper">
-    <div class="hud">
-        <div>SCORE: <span id="score">0</span></div>
-        <div id="status-text" class="status-searching">STATUS: SEARCHING...</div>
-    </div>
+    <a href="index.html" class="back-btn">← MENU</a>
+    <div class="hud">SCORE: <span id="score">0</span></div>
     
-    <div id="loading">
-        <div class="spinner"></div>
-        <h2>INITIALIZING SENSORS...</h2>
-        <p>Please allow camera access</p>
+    <div id="overlay">
+        <h1 style="font-size: 3rem; margin: 0; color: #00f3ff; text-shadow: 0 0 20px #00f3ff;">NEON PADDLE</h1>
+        <p style="color: #aaa;">Classic Gameplay</p>
+        <button id="start-btn">CLICK TO START</button>
+        <p id="status" style="margin-top: 20px; font-size: 0.8rem; color: #666;">Waiting for player...</p>
     </div>
 
     <video id="input_video" style="display:none" playsinline></video>
@@ -53,156 +58,136 @@
     const canvasElement = document.getElementById('output_canvas');
     const ctx = canvasElement.getContext('2d');
     const scoreEl = document.getElementById('score');
-    const statusEl = document.getElementById('status-text');
-    const loadingScreen = document.getElementById('loading');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+    const statusText = document.getElementById('status');
 
-    let paddleX = 0.5; // 0.0 to 1.0 (Screen width)
-    let ball = { x: 0.5, y: 0.1, vx: 0.005, vy: 0.005, r: 0.02 }; // Normalized coordinates
+    let paddleX = 0.5;
+    let ball = { x: 320, y: 50, vx: 4, vy: 4, r: 12 };
     let score = 0;
     let gameActive = false;
-    let handDetected = false;
 
     // --- DRAWING FUNCTIONS ---
 
-    function drawDrone(x, y, w, h) {
-        let width = w * 0.15; // Paddle width relative to screen
-        let height = 20;
-
-        // Draw Target Box around hand position
-        if (handDetected) {
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x - width/2, y - 40, width, 40);
-            
-            // Connect line from hand to paddle
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x, h - 30);
-            ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        // Draw Paddle (Drone)
-        let py = h - 30;
+    function drawNeonPaddle(x, y, width) {
+        // Classic Rectangle, but with Neon Glow
         ctx.shadowBlur = 20;
         ctx.shadowColor = '#00f3ff';
         ctx.fillStyle = '#00f3ff';
         
+        // Draw Rounded Rectangle
         ctx.beginPath();
-        ctx.moveTo(x - width/2, py);
-        ctx.lineTo(x + width/2, py);
-        ctx.lineTo(x + width/2 - 10, py + 10);
-        ctx.lineTo(x - width/2 + 10, py + 10);
+        ctx.roundRect(x - width/2, y, width, 20, 10);
         ctx.fill();
+        
+        // Inner white core for "light" effect
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x - width/2 + 5, y + 5, width - 10, 10);
+    }
 
-        // Engine Light
+    function drawNeonBall(x, y) {
+        // Classic Circle, Neon Pink Glow
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#bc13fe'; // Purple/Pink glow
+        ctx.fillStyle = '#bc13fe';
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0, Math.PI*2);
+        ctx.fill();
+        
+        // Inner white core
+        ctx.shadowBlur = 5;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.arc(x, py + 5, 5, 0, Math.PI*2);
+        ctx.arc(x, y, 5, 0, Math.PI*2);
         ctx.fill();
+        
         ctx.shadowBlur = 0;
     }
 
-    function drawBall(x, y, radius) {
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI*2);
-        ctx.fillStyle = '#ff0055';
-        ctx.fill();
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = '#ff0055';
-        ctx.fill();
-        ctx.shadowBlur = 0;
-    }
+    // --- GAME LOGIC (Old Version) ---
 
-    // --- GAME LOGIC ---
-
-    function updatePhysics(aspectRatio) {
+    function update() {
         if (!gameActive) return;
+
+        let w = canvasElement.width;
+        let h = canvasElement.height;
 
         // Move Ball
         ball.x += ball.vx;
-        ball.y += ball.vy * aspectRatio; // Adjust for screen shape
+        ball.y += ball.vy;
 
         // Wall Collisions
-        if (ball.x <= 0 || ball.x >= 1) ball.vx *= -1;
+        if (ball.x <= 0 || ball.x >= w) ball.vx *= -1;
         if (ball.y <= 0) ball.vy *= -1;
 
-        // Paddle Collision
-        // Paddle Y is at ~0.95 (bottom)
-        if (ball.y > 0.9 && ball.y < 0.96) {
-            let paddleWidth = 0.15; // 15% of screen
-            if (ball.x > paddleX - paddleWidth/2 && ball.x < paddleX + paddleWidth/2) {
-                ball.vy = -Math.abs(ball.vy * 1.05); // Bounce Up
+        // Paddle Collision (Simple Y check + X check)
+        let pX_pixel = paddleX * w;
+        let paddleY = h - 50; 
+        let paddleW = 120;
+
+        if (ball.y >= paddleY && ball.y <= paddleY + 15) {
+            if (ball.x >= pX_pixel - paddleW/2 && ball.x <= pX_pixel + paddleW/2) {
+                ball.vy = -Math.abs(ball.vy * 1.05); // Bounce Up & Speed Up
+                ball.vx *= 1.05;
                 score++;
                 scoreEl.innerText = score;
             }
         }
 
         // Miss
-        if (ball.y > 1.0) {
+        if (ball.y > h) {
             score = 0;
             scoreEl.innerText = 0;
-            ball.y = 0.1;
-            ball.vy = 0.005;
-            ball.vx = 0.005;
+            ball.y = 50;
+            ball.vy = 4;
+            ball.vx = 4;
         }
     }
 
-    // --- AI TRACKING ---
+    function draw() {
+        let w = canvasElement.width;
+        let h = canvasElement.height;
 
+        // Draw Paddle
+        drawNeonPaddle(paddleX * w, h - 50, 120);
+        
+        // Draw Ball
+        drawNeonBall(ball.x, ball.y);
+    }
+
+    // --- AI TRACKING ---
     function onResults(results) {
         if (!gameActive) {
             gameActive = true;
-            loadingScreen.style.display = 'none';
+            overlay.style.display = 'none';
         }
 
-        // Canvas Setup
         let w = canvasElement.width;
         let h = canvasElement.height;
-        let aspectRatio = w / h;
 
         ctx.save();
         ctx.clearRect(0, 0, w, h);
         
-        // Draw Darkened Camera Feed
+        // Draw Dark Background (Neon Theme Style)
         ctx.filter = 'grayscale(100%) brightness(30%)';
         ctx.drawImage(results.image, 0, 0, w, h);
         ctx.filter = 'none';
 
-        // Check for Hands
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            handDetected = true;
-            statusEl.innerText = "STATUS: TARGET LOCKED";
-            statusEl.className = "status-locked";
-
-            // Track CENTER of hand (Landmark 9) for stability
             const hand = results.multiHandLandmarks[0];
-            const handCenter = hand[9]; 
+            const indexTip = hand[8];
             
-            // Smooth movement
-            paddleX += (handCenter.x - paddleX) * 0.3; 
+            // Simple Tracking (Index Finger)
+            paddleX = indexTip.x; 
             
-            // Draw Hand Skeleton (Visual Feedback)
+            // Draw Skeleton (Green Lines)
             drawConnectors(ctx, hand, HAND_CONNECTIONS, {color: '#00ff00', lineWidth: 1});
-
-        } else {
-            handDetected = false;
-            statusEl.innerText = "STATUS: SEARCHING...";
-            statusEl.className = "status-searching";
         }
 
-        // Update & Draw Game
-        updatePhysics(aspectRatio);
-        
-        let ballPx = ball.x * w;
-        let ballPy = ball.y * h;
-        let paddlePx = paddleX * w;
-
-        drawDrone(paddlePx, results.multiHandLandmarks && results.multiHandLandmarks.length > 0 ? results.multiHandLandmarks[0][9].y * h : h-50, w, h);
-        drawBall(ballPx, ballPy, 10);
-
+        update();
+        draw();
         ctx.restore();
     }
 
@@ -214,20 +199,22 @@
     window.addEventListener('resize', resize);
     resize();
 
-    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-    hands.setOptions({
-        maxNumHands: 1, 
-        modelComplexity: 1, 
-        minDetectionConfidence: 0.5, 
-        minTrackingConfidence: 0.5
-    });
-    hands.onResults(onResults);
+    // Start Button Logic
+    startBtn.addEventListener('click', async () => {
+        startBtn.style.display = 'none';
+        statusText.innerText = "Loading AI & Camera...";
 
-    const camera = new Camera(videoElement, {
-        onFrame: async () => { await hands.send({image: videoElement}); },
-        width: 1280, height: 720
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5}); // Lite Mode
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 1280, height: 720
+        });
+        
+        await camera.start();
     });
-    camera.start();
 
 </script>
 </body>
